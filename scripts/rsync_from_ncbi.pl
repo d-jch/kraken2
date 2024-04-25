@@ -29,15 +29,58 @@ my $use_ftp = $ENV{"KRAKEN2_USE_FTP"};
 
 my $suffix = $is_protein ? "_protein.faa.gz" : "_genomic.fna.gz";
 
+# 根据species_taxid列去重复。
+# 当taxid某个值有多行时，优先保留refseq_category不是na的行，
+# 当多行都是na时，优先保留genome_size最大的行
+
+my $refseq_col = 4;
+my $taxid_col = 6;
+my $genome_col = 25;
+
+my %seen_taxid;         # 定义散列，用于存储已遇到的 taxid 及其最优行
+
+while (<>) {
+    next if /^#/;
+    chomp;
+
+    # 以制表符分隔读取每一列
+    my @fields = split /\t/, $_;
+
+    # 提取所需列的值
+    my ($taxid, $refseq_category, $genome_size) = @fields[$taxid_col, $refseq_col, $genome_col];
+
+    if (!exists $seen_taxid{$taxid}) {
+        # 第一次遇到该taxid，直接保存当前行
+        $seen_taxid{$taxid} = \@fields;
+        next;
+    }
+
+    # 已经遇到过该taxid，比较已有行和当前行
+
+    # 1. 比较refseq_category
+    my $prev_refseq_category = $seen_taxid{$taxid}[$refseq_col];
+    if ($refseq_category ne 'na' && $prev_refseq_category eq 'na') {
+        # 当前行非na且已存在行是na，更新为当前行
+        $seen_taxid{$taxid} = \@fields;
+        next;
+    }
+
+    # 2. refseq_category都是na时，比较genome_size
+    my $prev_genome_size = $seen_taxid{$taxid}[$genome_col];
+    if ($genome_size > $prev_genome_size) {
+        # 当前行genome_size更大，更新为当前行
+        $seen_taxid{$taxid} = \@fields;
+    }
+}
+
+
 # Manifest hash maps filenames (keys) to taxids (values)
 my %manifest;
-while (<>) {
-  next if /^#/;
-  chomp;
-  my @fields = split /\t/;
+foreach my $taxid (keys %seen_taxid) {
+  my @fields = @{$seen_taxid{$taxid}};
   my ($taxid, $asm_level, $ftp_path) = @fields[5, 11, 19];
   # Possible TODO - make the list here configurable by user-supplied flags
-  next unless grep {$asm_level eq $_} ("Complete Genome", "Chromosome");
+  # next unless grep {$asm_level eq $_} ("Complete Genome", "Chromosome");
   next if $ftp_path eq "na";  # Skip if no provided path
 
   my $full_path = $ftp_path . "/" . basename($ftp_path) . $suffix;
@@ -53,6 +96,10 @@ open MANIFEST, ">", "manifest.txt"
   or die "$PROG: can't write manifest: $!\n";
 print MANIFEST "$_\n" for keys %manifest;
 close MANIFEST;
+
+open MAP, ">", "map.txt" or die "$PROG: can't write map: $!\n";
+print MAP "$_\t$manifest{$_}\n" for keys %manifest;
+close MAP;
 
 if ($is_protein && ! $use_ftp) {
   print STDERR "Step 0/2: performing rsync dry run (only protein d/l requires this)...\n";
