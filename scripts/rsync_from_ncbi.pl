@@ -78,11 +78,18 @@ foreach my $taxid (keys %seen_taxid_max){
     }
 }
 
+my @kept = []
+foreach my $taxid (keys %seen_taxid){
+    my @lines = @{$seen_taxid{$taxid}}
+    foreach my $line (@lines){
+        push @kept, $line;
+    }
+}
 
 # Manifest hash maps filenames (keys) to taxids (values)
 my %manifest;
-foreach my $taxid (keys %seen_taxid) {
-  my @fields = @{$seen_taxid{$taxid}};
+foreach my $line (@kept) {
+  my @fields = @{$line};
   my ($taxid, $asm_level, $ftp_path) = @fields[5, 11, 19];
   # Possible TODO - make the list here configurable by user-supplied flags
   # next unless grep {$asm_level eq $_} ("Complete Genome", "Chromosome");
