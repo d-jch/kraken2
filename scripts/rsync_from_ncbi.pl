@@ -38,7 +38,7 @@ my $taxid_col = 6;
 my $genome_col = 25;
 
 my %seen_taxid;         # 定义散列，用于存储已遇到的 taxid 及其最优行
-
+my %seen_taxid_max;
 while (<>) {
     next if /^#/;
     chomp;
@@ -50,26 +50,31 @@ while (<>) {
     my ($taxid, $refseq_category, $genome_size) = @fields[$taxid_col, $refseq_col, $genome_col];
 
     if (!exists $seen_taxid{$taxid}) {
-        # 第一次遇到该taxid，直接保存当前行
-        $seen_taxid{$taxid} = \@fields;
-        next;
+        # 第一次遇到该taxid，创建一个新的数组来存储符合条件的行
+        $seen_taxid{$taxid} = [];
     }
 
-    # 已经遇到过该taxid，比较已有行和当前行
-
-    # 1. 比较refseq_category
-    my $prev_refseq_category = $seen_taxid{$taxid}[$refseq_col];
-    if ($refseq_category ne 'na' && $prev_refseq_category eq 'na') {
-        # 当前行非na且已存在行是na，更新为当前行
-        $seen_taxid{$taxid} = \@fields;
-        next;
+    if ($refseq_category ne 'na') {
+        # 当前行refseq_category非na，将其添加到该taxid对应的行数组中
+        push @{$seen_taxid{$taxid}}, \@fields;
+    } else {
+        # 当遇到'na' 行时，更新 %seen_taxid_max
+        if (exists $seen_taxid_max{$taxid}){
+            my $prev_genome_size = $seen_taxid_max{$taxid}[$genome_col];
+            if ($genome_size > $prev_genome_size) {
+                # 当前行genome_size更大，更新为当前行
+                $seen_taxid_max{$taxid} = \@fields;
+            }
+        } else {
+            $seen_taxid_max{$taxid} = \@fields;
     }
+}
 
-    # 2. refseq_category都是na时，比较genome_size
-    my $prev_genome_size = $seen_taxid{$taxid}[$genome_col];
-    if ($genome_size > $prev_genome_size) {
-        # 当前行genome_size更大，更新为当前行
-        $seen_taxid{$taxid} = \@fields;
+foreach my $taxid (keys %seen_taxid_max){
+    if (exists $seen_taxid{$taxid}){
+        next
+    } else {
+        $seen_taxid{$taxid} = [$seen_taxid_max{$taxid}]
     }
 }
 
