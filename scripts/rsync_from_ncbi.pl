@@ -68,7 +68,7 @@ while (<>) {
     }
 }
 
-my @kept；
+my @kept;
 foreach my $taxid (keys %selected_rows) {
     my $rows = $selected_rows{$taxid}->{rows};
     push @kept, @$rows;
