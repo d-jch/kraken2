@@ -29,16 +29,14 @@ my $use_ftp = $ENV{"KRAKEN2_USE_FTP"};
 
 my $suffix = $is_protein ? "_protein.faa.gz" : "_genomic.fna.gz";
 
-# 根据species_taxid列去重复。
-# 当taxid某个值有多行时，优先保留refseq_category不是na的行，
+# 当taxid某个值有多行时，优先保留所有refseq_category不是na的行，
 # 当多行都是na时，优先保留genome_size最大的行
 
 my $refseq_col = 4;
 my $taxid_col = 6;
 my $genome_col = 25;
 
-my %seen_taxid;         # 定义散列，用于存储已遇到的 taxid 及其最优行
-my %seen_taxid_max;
+my %selected_rows;         # 定义散列，用于存储已遇到的 taxid 及其最优行
 while (<>) {
     next if /^#/;
     chomp;
@@ -49,40 +47,38 @@ while (<>) {
     # 提取所需列的值
     my ($taxid, $refseq_category, $genome_size) = @fields[$taxid_col, $refseq_col, $genome_col];
 
-    if (!exists $seen_taxid{$taxid}) {
-        # 第一次遇到该taxid，创建一个新的数组来存储符合条件的行
-        $seen_taxid{$taxid} = [];
-    }
-
-    if ($refseq_category ne 'na') {
-        # 当前行refseq_category非na，将其添加到该taxid对应的行数组中
-        push @{$seen_taxid{$taxid}}, \@fields;
-    } else {
-        # 当遇到'na' 行时，更新 %seen_taxid_max
-        if (exists $seen_taxid_max{$taxid}){
-            my $prev_genome_size = $seen_taxid_max{$taxid}[$genome_col];
-            if ($genome_size > $prev_genome_size) {
-                # 当前行genome_size更大，更新为当前行
-                $seen_taxid_max{$taxid} = \@fields;
-            }
-        } else {
-            $seen_taxid_max{$taxid} = \@fields;
-    }
-}
-
-foreach my $taxid (keys %seen_taxid_max){
-    unless (exists $seen_taxid{$taxid}){
-        $seen_taxid{$taxid} = [$seen_taxid_max{$taxid}]
+    if (!exists $selected_rows{$taxid}){
+        $selected_rows{$taxid} = {
+            best_refseq => $refseq_category,
+            max_genome => $genome_size,
+            rows => [\@fields],
+        };
+    } elsif ($refseq_category eq 'na'){
+        if ($selected_rows{$taxid}->{best_refseq} eq "na" && $genome_size > $selected_rows{$taxid}->{max_genome}) {
+            $selected_rows{$taxid}->{max_genome} = $genome_size;
+            $selected_rows{$taxid}->{rows} = [\@fields];
+        }
+    } elsif ($refseq_category ne 'na'){
+        if ($selected_rows{$taxid}->{best_refseq} eq "na") {
+            $selected_rows{$taxid}->{best_refseq} = $refseq_category;
+            $selected_rows{$taxid}->{rows} = [\@fields];
+        } elsif ($selected_rows{$taxid}->{best_refseq} ne "na") {
+            push @{$selected_rows{$taxid}->{rows}}, \@fields;
+        }
     }
 }
 
-my @kept = []
-foreach my $taxid (keys %seen_taxid){
-    my @lines = @{$seen_taxid{$taxid}}
-    foreach my $line (@lines){
-        push @kept, $line;
-    }
+my @kept；
+foreach my $taxid (keys %selected_rows) {
+    my $rows = $selected_rows{$taxid}->{rows};
+    push @kept, @$rows;
 }
+# @kept = map { $_ } flatten(values %seen_taxid);
+# # 这是一个简单的 flatten 实现，它可以将嵌套的数组展开为一维数组。  
+# sub flatten {  
+#     my @nested = @_;  
+#     return [ map { ref $_ eq 'ARRAY' ? flatten(@$_) : $_ } @nested ];  
+# }
 
 # Manifest hash maps filenames (keys) to taxids (values)
 my %manifest;
