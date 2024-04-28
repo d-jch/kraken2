@@ -71,9 +71,7 @@ while (<>) {
 }
 
 foreach my $taxid (keys %seen_taxid_max){
-    if (exists $seen_taxid{$taxid}){
-        next
-    } else {
+    unless (exists $seen_taxid{$taxid}){
         $seen_taxid{$taxid} = [$seen_taxid_max{$taxid}]
     }
 }
